@@ -94,8 +94,11 @@ public class PunchOutController : Controller
             return new RedirectToRouteResult(NopRouteNames.General.HOMEPAGE, null);
         }
 
+        // the order message is built from the cart, so build it first
         var result = await _punchOutService.BuildReturnResponseAsync();
 
+        // the items are now in the buyer's requisition; remove them from the cart before signing out
+        await _punchOutService.ClearSubmittedShoppingCartAsync();
         await _punchOutService.ClearPunchoutSessionDataAsync();
 
         return Content(result, "text/html", Encoding.UTF8);
