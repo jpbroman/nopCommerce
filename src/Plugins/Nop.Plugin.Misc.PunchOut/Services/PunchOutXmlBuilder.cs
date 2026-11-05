@@ -3,6 +3,7 @@ using System.Text.Encodings.Web;
 using System.Xml;
 using System.Xml.Linq;
 using Nop.Core;
+using Nop.Plugin.Misc.PunchOut.Domain;
 using Nop.Plugin.Misc.PunchOut.Domain.CXML;
 
 namespace Nop.Plugin.Misc.PunchOut.Services;
@@ -56,6 +57,30 @@ public static class PunchOutXmlBuilder
     }
 
     /// <summary>
+    /// Parses the operation attribute of a PunchOutSetupRequest element
+    /// </summary>
+    /// <param name="value">The attribute value (create, edit or inspect); may be null</param>
+    /// <returns>The parsed operation</returns>
+    /// <exception cref="NopException">Thrown when the value is not a cXML PunchOut operation</exception>
+    /// <remarks>
+    /// A missing or empty value is treated as <see cref="PunchOutOperation.Create"/>, because
+    /// that is the safe choice: the buyer never sees items from an earlier requisition.
+    /// </remarks>
+    public static PunchOutOperation ParseOperation(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return PunchOutOperation.Create;
+
+        return value.Trim().ToLowerInvariant() switch
+        {
+            "create" => PunchOutOperation.Create,
+            "edit" => PunchOutOperation.Edit,
+            "inspect" => PunchOutOperation.Inspect,
+            _ => throw new NopException($"Unsupported PunchOut operation '{value}'.")
+        };
+    }
+
+    /// <summary>
     /// Parses a PunchOut setup request
     /// </summary>
     /// <param name="xml">The XML string to parse</param>
@@ -87,7 +112,8 @@ public static class PunchOutXmlBuilder
             BuyerCookie = request.Element("BuyerCookie")?.Value,
             BrowserFormPostUrl = request.Element("BrowserFormPost")?.Element("URL")?.Value,
             ShipTo = ParseAddress(request.Element("ShipTo")),
-            Contact = contactEmail
+            Contact = contactEmail,
+            Operation = ParseOperation((string)request.Attribute("operation"))
         };
     }
 

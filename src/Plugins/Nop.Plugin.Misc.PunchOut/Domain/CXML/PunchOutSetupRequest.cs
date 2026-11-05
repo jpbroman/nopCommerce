@@ -14,4 +14,9 @@ public class PunchOutSetupRequest : BasePunchOutModel
     public PunchOutAddress ShipTo { get; set; }
 
     public string Contact { get; set; }
+
+    /// <summary>
+    /// The requested operation (create, edit or inspect)
+    /// </summary>
+    public PunchOutOperation Operation { get; set; }
 }

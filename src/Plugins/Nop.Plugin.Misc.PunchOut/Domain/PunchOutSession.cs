@@ -36,6 +36,11 @@ public class PunchOutSession
     public bool IsActive { get; set; }
 
     /// <summary>
+    /// Gets or sets the operation requested in the PunchOutSetupRequest that started the session
+    /// </summary>
+    public PunchOutOperation Operation { get; set; }
+
+    /// <summary>
     /// Gets or sets the date and time when the session was created
     /// </summary>
     public DateTime CreatedOnUtc { get; set; }

@@ -331,11 +331,13 @@ public class PunchOutService
     /// </returns>
     public async Task<string> HandleSetupRequestAsync(string xml, HttpContext httpContext)
     {
-        var request = PunchOutXmlBuilder.ParseSetupRequest(xml);
         var sessionId = GenerateSecureToken(PunchOutDefaults.TokenLength);
+        PunchOutSetupRequest request = null;
 
         try
         {
+            request = PunchOutXmlBuilder.ParseSetupRequest(xml);
+
             // inbound log
             await _punchOutLogService.LogAsync(new PunchOutLog
             {
@@ -393,6 +395,11 @@ public class PunchOutService
             if (customerRoleIds.Intersect(_punchOutSettings.RestrictedCustomerRoleIds).Any())
                 throw new NopException("Access with current customer role denied.");
 
+            var storeId = (await _storeContext.GetCurrentStoreAsync()).Id;
+
+            // a new requisition must not contain items from an earlier one
+            await PrepareShoppingCartAsync(customer, storeId, request.Operation);
+
             // PunchOut session
             var session = new PunchOutSession
             {
@@ -400,8 +407,9 @@ public class PunchOutService
                 BuyerCookie = request.BuyerCookie,
                 ReturnUrl = request.BrowserFormPostUrl,
                 CustomerId = customer.Id,
-                StoreId = (await _storeContext.GetCurrentStoreAsync()).Id,
+                StoreId = storeId,
                 IsActive = false,
+                Operation = request.Operation,
                 CreatedOnUtc = DateTime.UtcNow
             };
 
@@ -433,7 +441,7 @@ public class PunchOutService
             await _punchOutLogService.LogAsync(new PunchOutLog
             {
                 SessionId = sessionId,
-                PayloadId = request.PayloadId,
+                PayloadId = request?.PayloadId,
                 MessageTypeId = (int)PunchOutMessageType.SetupRequest,
                 DirectionId = (int)PunchOutDirection.Inbound,
                 RawXml = xml,
@@ -549,6 +557,50 @@ public class PunchOutService
 
         return PunchOutXmlBuilder.BuildPunchOutOrderMessage(model);
     }
+
+    #region Shopping cart
+
+    /// <summary>
+    /// Prepares the customer's shopping cart for a new PunchOut session
+    /// </summary>
+    /// <param name="customer">The customer the session belongs to</param>
+    /// <param name="storeId">The store identifier</param>
+    /// <param name="operation">The operation requested in the PunchOutSetupRequest</param>
+    /// <returns>A task that represents the asynchronous operation</returns>
+    /// <remarks>
+    /// For <see cref="PunchOutOperation.Create"/> the cart is emptied, so the buyer starts a new
+    /// requisition. For <see cref="PunchOutOperation.Edit"/> and <see cref="PunchOutOperation.Inspect"/>
+    /// the cart is kept, so the buyer can continue a requisition that has not been submitted yet.
+    /// Only the shopping cart is affected; the wishlist is never changed.
+    /// </remarks>
+    public async Task PrepareShoppingCartAsync(Customer customer, int storeId, PunchOutOperation operation)
+    {
+        ArgumentNullException.ThrowIfNull(customer);
+
+        if (operation != PunchOutOperation.Create)
+            return;
+
+        await _shoppingCartService.ClearShoppingCartAsync(customer, storeId);
+    }
+
+    /// <summary>
+    /// Empties the current customer's shopping cart after it has been submitted to the procurement system
+    /// </summary>
+    /// <returns>A task that represents the asynchronous operation</returns>
+    /// <remarks>
+    /// Call this method only after the PunchOutOrderMessage has been built, because the message is built
+    /// from the cart. The items now belong to the requisition in the procurement system, so keeping them
+    /// in the cart would show them again in the customer's next session (issue #8435).
+    /// </remarks>
+    public async Task ClearSubmittedShoppingCartAsync()
+    {
+        var customer = await _workContext.GetCurrentCustomerAsync();
+        var store = await _storeContext.GetCurrentStoreAsync();
+
+        await _shoppingCartService.ClearShoppingCartAsync(customer, store.Id);
+    }
+
+    #endregion
 
     #region Session
 
